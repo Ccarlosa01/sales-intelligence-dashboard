@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Intelligence</title>
+  <meta name="robots" content="noindex,nofollow">
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f7fb;color:#17233d;min-height:100vh;display:grid;place-items:center}
+    main{background:#fff;max-width:480px;width:calc(100% - 64px);border:1px solid #e0e6ef;border-radius:18px;padding:32px;box-shadow:0 16px 40px #17233d12}
+    h1{margin:0 0 12px;font-size:27px}p{line-height:1.6;color:#526178}a{color:#225bc0;font-weight:600}code{overflow-wrap:anywhere}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sales Intelligence</h1>
+    <p id="status">Opening your dashboard…</p>
+    <p id="help" hidden>Before publishing, replace <code>PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE</code> in <code>index.html</code> with your deployed Google Apps Script Web App URL ending in <code>/exec</code>.</p>
+    <p id="manual" hidden><a id="open-link" href="#">Open Sales Intelligence manually</a></p>
+  </main>
+  <script>
+    // Replace this placeholder ONCE with your actual Google Apps Script /exec URL.
+    const APP_SCRIPT_URL = 'PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE';
+    const valid = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec(?:\?.*)?$/.test(APP_SCRIPT_URL);
+    if (valid) {
+      document.getElementById('open-link').href = APP_SCRIPT_URL;
+      document.getElementById('manual').hidden = false;
+      window.location.replace(APP_SCRIPT_URL);
+    } else {
+      document.getElementById('status').textContent = 'Setup required: the Apps Script URL has not been configured.';
+      document.getElementById('help').hidden = false;
+    }
+  </script>
+</body>
+</html>
