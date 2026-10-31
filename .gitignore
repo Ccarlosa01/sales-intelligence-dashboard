@@ -1,0 +1,8 @@
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.json
+.DS_Store
+.env*
+node_modules/
