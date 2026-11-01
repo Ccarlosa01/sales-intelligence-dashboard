@@ -3,7 +3,6 @@
 (()=>{
 const el=id=>document.getElementById(id);
 const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
-const urlKey='salesIntelligenceApiUrl';
 const configured=()=>{const value=window.SALES_INTELLIGENCE_APPS_SCRIPT_URL;if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(value||''))throw Error('Apps Script URL is not configured in index.html.');return value;};
 let activeFile=null,reportItems=[],busy=false;
 function status(msg){el('archiveStatus').textContent=msg;}
@@ -15,6 +14,7 @@ function apiGet(action,params={}){
   return new Promise((resolve,reject)=>{
     const cb='siCb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
     const script=document.createElement('script');let settled=false;
+    let timer;
     const clean=()=>{clearTimeout(timer);script.remove();try{delete window[cb]}catch(e){window[cb]=undefined}};
     const done=(error,value)=>{if(settled)return;settled=true;clean();error?reject(error):resolve(value)};
     window[cb]=response=>{
@@ -26,7 +26,7 @@ function apiGet(action,params={}){
     url.searchParams.set('callback',cb);url.searchParams.set('_t',String(Date.now()));
     Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,String(v)));
     script.src=url.toString();document.head.append(script);
-    const timer=setTimeout(()=>done(new Error('Apps Script did not execute its JSONP callback. Check deployment version and the Diagnostics link.')),25000);
+    timer=setTimeout(()=>done(new Error('Apps Script did not execute the JSONP callback within 25 seconds. Check the browser Console for CSP or blocked script errors.')),25000);
   });
 }
 async function apiPost(fields){
@@ -54,7 +54,9 @@ async function apiPost(fields){
       try{
         const receipt=await apiGet('receipt',{token});
         if(receipt?.pending)continue;
-        return receipt;
+        if(!receipt || typeof receipt.ok !== 'boolean') throw Error('Invalid backend receipt response.');
+        if(!receipt.ok) throw Error(receipt.error || 'Apps Script operation failed');
+        return receipt.data;
       }catch(err){
         // The GET transport may fail transiently while Google is processing.
         if(Date.now()-started>75000)throw err;
@@ -70,9 +72,9 @@ function showDiagnostics(){
  const target=el('archiveEntries');
  if(!target)return;
  target.textContent='';
- const link=document.createElement('a');link.href=configured()+'?action=ping&callback=console.log';
+ const link=document.createElement('a');link.href=configured()+'?action=ping&callback=siDiagnostic';
  link.target='_blank';link.rel='noopener noreferrer';link.textContent='Open Apps Script JSONP diagnostic in a new tab';
- const p=document.createElement('p');p.className='hint';p.textContent='The response should look like console.log({"ok":true,...}); not plain JSON or an HTML page. If this works but the website fails, inspect the browser Console for blocked scripts.';
+ const p=document.createElement('p');p.className='hint';p.textContent='The response should look like siDiagnostic({"ok":true,...}); not plain JSON or an HTML page. If this works but the website fails, inspect the browser Console for blocked scripts.';
  target.append(link,p);
 }
 function renderEntries(){let year=el('archiveYear').value,month=el('archiveMonth').value;let rows=reportItems.filter(x=>(!year||Number(year)===x.year)&&(!month||Number(month)===x.month));status(`${rows.length} report version${rows.length===1?'':'s'} available · ${reportItems.length} total`);el('archiveEntries').innerHTML='';if(!rows.length){el('archiveEntries').textContent='No reports for that reporting period.';return;}rows.forEach(r=>{let div=document.createElement('div');div.className='archive-entry';let period=document.createElement('span');period.className='period';period.textContent=months[r.month-1]+' '+r.year;let info=document.createElement('div'),name=document.createElement('strong'),metadata=document.createElement('small');name.textContent=r.name;metadata.textContent=new Date(r.uploaded).toLocaleString()+' · '+(r.bytes/1048576).toFixed(1)+' MB';info.append(name,metadata);let btn=document.createElement('button');btn.className='quiet';btn.textContent='Open →';btn.onclick=()=>openSaved(r);div.append(period,info,btn);el('archiveEntries').appendChild(div)})}
