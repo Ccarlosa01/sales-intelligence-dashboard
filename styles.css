@@ -4,3 +4,207 @@
 
 /* v1.5 archive extension — matches the existing light dashboard look */
 .archive-landing{max-width:1160px;margin:0 auto 24px}.archive-actions{display:grid;grid-template-columns:1.2fr 1fr;gap:24px}.archive-actions>div{min-width:0;padding:16px;border:1px solid var(--border,#e2e8f0);border-radius:12px}.archive-period{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.archive-period label{font-size:12px;color:#637087}.archive-period select,.archive-period input,.archive-config input{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #d7deea;border-radius:8px;background:white}.archive-actions button{margin:4px}.archive-entry{width:100%;padding:13px 8px;border-bottom:1px solid #e7ebf2;display:flex;align-items:center;gap:8px;justify-content:space-between;text-align:left}.archive-entry strong{font-size:13px}.archive-entry small{display:block;font-size:11px;color:#687587}.archive-entry button{flex-shrink:0}.archive-config{margin-top:22px;border-top:1px solid #e7ebf2;padding-top:14px}.archive-config summary{cursor:pointer;color:#496b9e;font-size:13px}.archive-config input{max-width:740px}.archive-entry .period{background:#eaf2ff;color:#2763b4;padding:6px 8px;border-radius:6px;white-space:nowrap;font-size:12px}.archive-landing .section-heading{margin-bottom:20px}@media(max-width:800px){.archive-actions{grid-template-columns:1fr}.archive-period{grid-template-columns:1fr}}
+
+/* v2.4 — mobile header and report archive overflow fixes.
+   These additions do not change the desktop layout or application logic. */
+.archive-landing,
+.archive-actions,
+.archive-actions > div,
+#archiveEntries {
+  min-width: 0;
+  max-width: 100%;
+}
+.archive-entry > div {
+  min-width: 0;
+  flex: 1 1 0;
+}
+.archive-entry strong,
+.archive-entry small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.archive-entry strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archive-entry .period {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 700px) {
+  /* Keep the navy header compact. The privacy note belongs on desktop only. */
+  .sidebar {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    position: static;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+  .sidebar-bottom,
+  .sidebar .nav-label {
+    display: none !important;
+  }
+  .sidebar .brand {
+    width: 100%;
+    margin: 0;
+    padding: 0 2px;
+    justify-content: flex-start;
+    gap: 9px;
+  }
+  .sidebar .brand > div:last-child {
+    display: block;
+    font-size: 12px;
+    min-width: 0;
+  }
+  .sidebar .brand strong {
+    display: block;
+    font-size: 14px;
+  }
+  .sidebar .brand small {
+    display: block;
+    font-size: 11px;
+    margin-top: 1px;
+  }
+  .sidebar .logo {
+    flex: 0 0 auto;
+    padding: 9px 11px;
+  }
+  .sidebar nav {
+    display: flex;
+    flex: none;
+    width: 100%;
+    gap: 4px;
+    justify-content: space-between;
+    min-width: 0;
+  }
+  .sidebar nav button {
+    min-width: 0;
+    flex: 1 1 0;
+    padding: 10px 6px;
+    text-align: center;
+    white-space: nowrap;
+    font-size: 0;
+  }
+  .sidebar nav button span {
+    display: inline-block;
+    font-size: 21px;
+    margin: 0;
+    line-height: 1.1;
+  }
+
+  /* Let the report/store selectors and actions wrap inside the viewport. */
+  .topbar {
+    width: 100%;
+    padding: 12px;
+  }
+  .top-controls {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    gap: 9px;
+  }
+  .top-controls .control {
+    min-width: 0;
+    flex: 1 1 135px;
+  }
+  .top-controls .control select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .top-controls > button {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+  }
+  .content {
+    max-width: 100%;
+    min-width: 0;
+    padding: 16px 12px 50px;
+  }
+  .archive-landing {
+    width: 100%;
+    padding: 16px;
+  }
+  .archive-actions {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .archive-actions > div {
+    width: 100%;
+    padding: 14px;
+  }
+  .archive-actions .table-tools {
+    min-width: 0;
+    gap: 8px;
+  }
+  .archive-actions .table-tools select {
+    flex: 1 1 110px;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .archive-actions .table-tools button {
+    margin: 0;
+  }
+  .archive-period {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .archive-actions button {
+    max-width: 100%;
+    white-space: normal;
+  }
+  #archiveEntries {
+    width: 100%;
+    overflow: hidden;
+  }
+  .archive-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 10px;
+    padding: 12px 0;
+    width: 100%;
+    min-width: 0;
+  }
+  .archive-entry .period {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: start;
+    width: fit-content;
+  }
+  .archive-entry > div {
+    grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .archive-entry strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: hidden;
+    line-height: 1.4;
+  }
+  .archive-entry small {
+    line-height: 1.45;
+  }
+  .archive-entry > button {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+    align-self: center;
+    margin: 0;
+    white-space: nowrap;
+  }
+}
+
+/* Hide the desktop-only sidebar note when navigation becomes icon-only. */
+@media (max-width: 1050px) { .sidebar-bottom { display: none !important; } }
