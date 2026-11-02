@@ -4,7 +4,36 @@
 const el=id=>document.getElementById(id);
 const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const configured=()=>{const value=window.SALES_INTELLIGENCE_APPS_SCRIPT_URL;if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(value||''))throw Error('Apps Script URL is not configured in index.html.');return value;};
-let activeFile=null,reportItems=[],busy=false;
+let activeFile=null,reportItems=[],busy=false,lastParsedReport=null;
+// Local workbook cache. Drive remains the source of truth; the cache only
+// accelerates reopening the exact file version on the same browser/device.
+const CACHE_DB='SalesIntelligenceReportCache', CACHE_STORE='workbooks';
+let cacheDbPromise;
+function cacheDb(){
+  if(!('indexedDB' in window))return Promise.reject(Error('IndexedDB unavailable'));
+  if(!cacheDbPromise)cacheDbPromise=new Promise((resolve,reject)=>{
+    const req=indexedDB.open(CACHE_DB,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(CACHE_STORE))db.createObjectStore(CACHE_STORE,{keyPath:'id'});};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||Error('Cache database unavailable'));
+  });
+  return cacheDbPromise;
+}
+async function cacheGet(id,bytes){
+  try{
+    const db=await cacheDb();
+    const entry=await new Promise((resolve,reject)=>{const tx=db.transaction(CACHE_STORE,'readonly');const q=tx.objectStore(CACHE_STORE).get(id);q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    if(entry&&entry.bytes===bytes&&entry.buffer?.byteLength===bytes)return entry.buffer;
+  }catch(e){console.warn('Report cache unavailable:',e);}
+  return null;
+}
+async function cachePut(id,bytes,buffer){
+  try{
+    const db=await cacheDb();
+    await new Promise((resolve,reject)=>{const tx=db.transaction(CACHE_STORE,'readwrite');tx.objectStore(CACHE_STORE).put({id,bytes,buffer,storedAt:Date.now()});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+  }catch(e){console.warn('Unable to save local report cache:',e);}
+}
+
 function status(msg){el('archiveStatus').textContent=msg;}
 function uploadStatus(msg){el('uploadStatus').textContent=msg;}
 function showLibrary(){el('libraryLanding').classList.remove('hidden');el('workspace').classList.add('hidden');el('emptyState').classList.add('hidden');el('pageTitle').textContent='Report Library';el('pageSub').textContent='Select a saved reporting month or upload a new workbook.';el('breadcrumb').textContent='REPORT ARCHIVE';refresh().catch(err=>{status(err.message);showDiagnostics();});}
@@ -78,9 +107,100 @@ function showDiagnostics(){
  target.append(link,p);
 }
 function renderEntries(){let year=el('archiveYear').value,month=el('archiveMonth').value;let rows=reportItems.filter(x=>(!year||Number(year)===x.year)&&(!month||Number(month)===x.month));status(`${rows.length} report version${rows.length===1?'':'s'} available · ${reportItems.length} total`);el('archiveEntries').innerHTML='';if(!rows.length){el('archiveEntries').textContent='No reports for that reporting period.';return;}rows.forEach(r=>{let div=document.createElement('div');div.className='archive-entry';let period=document.createElement('span');period.className='period';period.textContent=months[r.month-1]+' '+r.year;let info=document.createElement('div'),name=document.createElement('strong'),metadata=document.createElement('small');name.textContent=r.name;metadata.textContent=new Date(r.uploaded).toLocaleString()+' · '+(r.bytes/1048576).toFixed(1)+' MB';info.append(name,metadata);let btn=document.createElement('button');btn.className='quiet';btn.textContent='Open →';btn.onclick=()=>openSaved(r);div.append(period,info,btn);el('archiveEntries').appendChild(div)})}
-async function openSaved(r){if(busy)return;busy=true;try{status('Opening '+r.name+'…');let meta=await apiGet('startRead',{fileId:r.id});if(meta.bytes>30*1024*1024)throw Error('Report exceeds 30 MB limit');let result=new Uint8Array(meta.bytes);for(let offset=0;offset<meta.bytes;offset+=meta.chunkBytes){let part=await apiGet('readChunk',{fileId:r.id,offset});result.set(decode64(part.base64),offset);status('Downloading '+Math.min(100,Math.round((offset+meta.chunkBytes)/meta.bytes*100))+'%');}let file=new File([result],r.name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});let parsed=await readExcel(file);startReport(parsed);activeFile=null;el('saveArchive').disabled=true;uploadStatus('Opened saved report: '+months[r.month-1]+' '+r.year);status('Report opened.');}catch(err){status('Unable to open report: '+err.message)}finally{busy=false}}
-async function saveFile(){if(busy)return;if(!activeFile){uploadStatus('Select a new Excel file first.');return;}busy=true;el('saveArchive').disabled=true;try{let year=Number(el('uploadYear').value),month=Number(el('uploadMonth').value);if(!Number.isInteger(year)||year<2020||year>2100)throw Error('Select a valid reporting year');if(activeFile.size>30*1048576)throw Error('Maximum upload size is 30 MB');uploadStatus('Checking Google Drive connection…');await apiGet('ping');uploadStatus('Starting direct-to-Drive resumable upload…');const init=await apiPost({action:'begin',year,month,filename:activeFile.name,totalBytes:activeFile.size});const chunkBytes=init.chunkBytes;const count=Math.ceil(activeFile.size/chunkBytes);for(let i=0;i<count;i++){const part=new Uint8Array(await activeFile.slice(i*chunkBytes,(i+1)*chunkBytes).arrayBuffer());await apiPost({action:'chunk',session:init.session,index:i,base64:toB64(part)});uploadStatus('Uploading to Drive: '+Math.round((i+1)/count*100)+'% ('+(i+1)+'/'+count+' transfers; no temporary files)');}const saved=await apiPost({action:'finish',session:init.session});uploadStatus('Saved successfully: '+saved.name+' · '+months[month-1]+' '+year);activeFile=null;await refresh();}catch(err){uploadStatus('Upload failed: '+err.message)}finally{busy=false;el('saveArchive').disabled=!activeFile}}
-window.archiveOnReportLoaded=report=>{if(activeFile)el('saveArchive').disabled=false;};
+async function gzipReport(report){
+  if(!('CompressionStream' in window))throw Error('Browser does not support compressed reports');
+  const minimized={schema:1,name:report.name,stores:report.stores};
+  const source=new Blob([JSON.stringify(minimized)],{type:'application/json'});
+  const stream=source.stream().pipeThrough(new CompressionStream('gzip'));
+  return new Blob([await new Response(stream).arrayBuffer()],{type:'application/gzip'});
+}
+async function parseCompressed(buffer,r){
+  if(!('DecompressionStream' in window))throw Error('Browser does not support compressed reports');
+  const stream=new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const raw=await new Response(stream).text();
+  const data=JSON.parse(raw);
+  if(data.schema!==1||!data.stores||!Object.keys(data.stores).length)throw Error('Invalid processed report');
+  return {name:r.name,loaded:new Date().toLocaleString(),stores:data.stores};
+}
+async function downloadFile(fileId,bytes,message){
+  const meta=await apiGet('startRead',{fileId});
+  if(meta.bytes!==bytes)throw Error('Stored report size changed');
+  const result=new Uint8Array(meta.bytes);
+  for(let offset=0;offset<meta.bytes;offset+=meta.chunkBytes){
+    const part=await apiGet('readChunk',{fileId,offset});
+    result.set(decode64(part.base64),offset);
+    status(message+' '+Math.min(100,Math.round((offset+meta.chunkBytes)/meta.bytes*100))+'%');
+  }
+  return result.buffer;
+}
+async function uploadBlob(blob,details){
+  const init=await apiPost({action:'begin',year:details.year,month:details.month,
+    filename:details.filename,totalBytes:blob.size,kind:details.kind||'workbook',sourceId:details.sourceId||''});
+  const count=Math.ceil(blob.size/init.chunkBytes);
+  for(let i=0;i<count;i++){
+    const bytes=new Uint8Array(await blob.slice(i*init.chunkBytes,(i+1)*init.chunkBytes).arrayBuffer());
+    await apiPost({action:'chunk',session:init.session,index:i,base64:toB64(bytes)});
+    uploadStatus(details.progress+' '+Math.round((i+1)/count*100)+'%');
+  }
+  return apiPost({action:'finish',session:init.session});
+}
+async function openSaved(r){
+  if(busy)return;
+  busy=true;
+  try{
+    status('Opening '+r.name+'…');
+    if(r.bytes>30*1024*1024)throw Error('Report exceeds 30 MB limit');
+    let parsed=null;
+    if(r.index){
+      try{
+        status('Loading optimized report…');
+        const idxBuffer=await downloadFile(r.index.id,r.index.bytes,'Loading optimized data');
+        parsed=await parseCompressed(idxBuffer,r);
+      }catch(err){console.warn('Optimized report unavailable; using original Excel:',err);}
+    }
+    if(!parsed){
+      let buffer=await cacheGet(r.id,r.bytes);
+      if(!buffer){buffer=await downloadFile(r.id,r.bytes,'Downloading Excel');cachePut(r.id,r.bytes,buffer);}
+      status('Reading Excel workbook…');
+      parsed=await readExcel(new File([buffer],r.name,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    }
+    startReport(parsed);
+    activeFile=null;
+    el('saveArchive').disabled=true;
+    uploadStatus('Opened saved report: '+months[r.month-1]+' '+r.year);
+    status('Report opened.');
+  }catch(err){status('Unable to open report: '+err.message)}
+  finally{busy=false}
+}
+async function saveFile(){
+  if(busy)return;
+  if(!activeFile){uploadStatus('Select a new Excel file first.');return;}
+  busy=true;el('saveArchive').disabled=true;
+  try{
+    const year=Number(el('uploadYear').value),month=Number(el('uploadMonth').value);
+    if(!Number.isInteger(year)||year<2020||year>2100||month<1||month>12)throw Error('Invalid reporting period');
+    if(activeFile.size>30*1048576)throw Error('Excel file exceeds 30 MB');
+    uploadStatus('Checking Drive connection…');await apiGet('ping');
+    const report=lastParsedReport && lastParsedReport.name===activeFile.name?lastParsedReport:await readExcel(activeFile);
+    uploadStatus('Saving original workbook…');
+    const saved=await uploadBlob(activeFile,{year,month,filename:activeFile.name,progress:'Saving original Excel'});
+    activeFile.arrayBuffer().then(buffer=>cachePut(saved.id,activeFile.size,buffer)).catch(()=>{});
+    // The original workbook is safely stored even if the index fails.
+    try{
+      uploadStatus('Creating optimized dashboard data…');
+      const compressed=await gzipReport(report);
+      uploadStatus('Saving optimized dashboard data ('+(compressed.size/1048576).toFixed(2)+' MB)…');
+      await uploadBlob(compressed,{year,month,filename:'dashboard.json.gz',kind:'index',sourceId:saved.id,progress:'Saving optimized data'});
+      uploadStatus('Saved workbook and optimized data successfully.');
+    }catch(indexErr){
+      console.warn(indexErr);
+      uploadStatus('Excel saved, but optimization failed: '+indexErr.message+'. Older download method will be used.');
+    }
+    activeFile=null;await refresh();
+  }catch(err){uploadStatus('Upload failed: '+err.message)}
+  finally{busy=false;el('saveArchive').disabled=!activeFile;}
+}
+window.archiveOnReportLoaded=report=>{lastParsedReport=report;if(activeFile)el('saveArchive').disabled=false;};
 el('libraryBtn').onclick=showLibrary;el('showLibrary').onclick=showLibrary;
 el('libraryUpload').onclick=()=>el('fileInput').click();
 el('saveArchive').onclick=saveFile;el('refreshArchive').onclick=()=>refresh().catch(e=>status(e.message));
