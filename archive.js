@@ -36,7 +36,42 @@ async function cachePut(id,bytes,buffer){
 
 function status(msg){el('archiveStatus').textContent=msg;}
 function uploadStatus(msg){el('uploadStatus').textContent=msg;}
-function showLibrary(){el('libraryLanding').classList.remove('hidden');el('workspace').classList.add('hidden');el('emptyState').classList.add('hidden');el('pageTitle').textContent='Report Library';el('pageSub').textContent='Select a saved reporting month or upload a new workbook.';el('breadcrumb').textContent='REPORT ARCHIVE';refresh().catch(err=>{status(err.message);showDiagnostics();});}
+// The report library is a temporary view, not a reset of the loaded report.
+let pageBeforeLibrary='overview';
+function updateReturnButton(){
+  let button=el('returnToDashboard');
+  if(!button){
+    button=document.createElement('button');
+    button.id='returnToDashboard';
+    button.type='button';
+    button.className='primary';
+    button.style.margin='0 0 18px';
+    button.onclick=returnToDashboard;
+    el('libraryLanding').prepend(button);
+  }
+  button.classList.toggle('hidden',!state.report);
+  if(state.report)button.textContent='← Return to Dashboard · '+state.report.name;
+}
+function returnToDashboard(){
+  if(!state.report)return;
+  el('libraryLanding').classList.add('hidden');
+  el('emptyState').classList.add('hidden');
+  el('workspace').classList.remove('hidden');
+  // Restore the active dashboard page without reloading or reprocessing the report.
+  setPage(pageBeforeLibrary);
+}
+function showLibrary(){
+  if(state.report && !el('workspace').classList.contains('hidden')) pageBeforeLibrary=state.page;
+  el('libraryLanding').classList.remove('hidden');
+  el('workspace').classList.add('hidden');
+  el('emptyState').classList.add('hidden');
+  el('pageTitle').textContent='Report Library';
+  el('pageSub').textContent='Select a saved reporting month or upload a new workbook.';
+  el('breadcrumb').textContent='REPORT ARCHIVE';
+  updateReturnButton();
+  // Refresh the report list without discarding the active dashboard.
+  refresh().catch(err=>{status(err.message);showDiagnostics();});
+}
 function apiGet(action,params={}){
   // Google Apps Script ContentService supports JSONP, not ordinary cross-origin fetch.
   // A fresh callback and cache-buster are created for each request.
@@ -200,7 +235,7 @@ async function saveFile(){
   }catch(err){uploadStatus('Upload failed: '+err.message)}
   finally{busy=false;el('saveArchive').disabled=!activeFile;}
 }
-window.archiveOnReportLoaded=report=>{lastParsedReport=report;if(activeFile)el('saveArchive').disabled=false;};
+window.archiveOnReportLoaded=report=>{lastParsedReport=report;pageBeforeLibrary='overview';updateReturnButton();if(activeFile)el('saveArchive').disabled=false;};
 el('libraryBtn').onclick=showLibrary;el('showLibrary').onclick=showLibrary;
 el('libraryUpload').onclick=()=>el('fileInput').click();
 el('saveArchive').onclick=saveFile;el('refreshArchive').onclick=()=>refresh().catch(e=>status(e.message));
